@@ -42,12 +42,8 @@ jobs:
           }
           $forbidden = @(
             ('YOUR_' + 'USERNAME'),
-            ('C:' + '/Users/cing'),
-            ('C:' + '\\Users\\cing'),
-            ('D:' + '/kkeeiill2'),
-            ('D:' + '\\kkeeiill2'),
-            ('D:' + '/stm32cubeclt'),
-            ('D:' + '\\stm32cubeclt')
+            ('C:' + '/Users/[^/\\s]+'),
+            ('C:' + '\\Users\\[^\\\\s]+')
           ) -join '|'
           $matches = git grep -n -I -E $forbidden -- . 2>$null
           if ($LASTEXITCODE -eq 0 -and $matches) { throw "Maintainer-specific path found:`n$matches" }
