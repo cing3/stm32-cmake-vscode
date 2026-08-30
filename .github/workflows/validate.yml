@@ -46,4 +46,7 @@ jobs:
             ('C:' + '\\Users\\[^\\\\s]+')
           ) -join '|'
           $matches = git grep -n -I -E $forbidden -- . 2>$null
-          if ($LASTEXITCODE -eq 0 -and $matches) { throw "Maintainer-specific path found:`n$matches" }
+          $grepExitCode = $LASTEXITCODE
+          if ($grepExitCode -eq 0 -and $matches) { throw "Maintainer-specific path found:`n$matches" }
+          if ($grepExitCode -notin @(0, 1)) { throw "git grep failed with exit code $grepExitCode" }
+          exit 0
