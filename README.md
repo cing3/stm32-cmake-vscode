@@ -1,74 +1,64 @@
 # STM32 CMake + VS Code Skill
 
-A portable Codex skill for developers who use STM32CubeMX and want a low-friction CMake + VS Code workflow with Cortex-Debug and optional AmphiLink CFG Tool support.
+A portable Codex skill for developers who already use STM32CubeMX and want a low-friction CMake + VS Code workflow with automatic source discovery, Cortex-Debug, and optional AmphiLink CFG Tool support.
 
-## Features
+## What It Does
 
-- Automatic CMake project generation from STM32CubeMX `.ioc` files
-- Seamless VS Code integration with Cortex-Debug
-- Optional AmphiLink CFG Tool support
-- Fallback to standard CMake when STM32-specific VS Code extensions are unavailable
-- Auto-detection of new C/C++/assembly files
+CubeMX remains responsible for creating and regenerating the CMake project. This skill initializes that generated project once, then keeps VS Code and CMake configuration synchronized:
 
-## Workflow
+- Right-click or run one PowerShell script to initialize a project.
+- Automatically collect new C/C++/assembly sources and header include directories.
+- Reconfigure when the `.ioc` file or CMake inputs change.
+- Generate ST-Link and generic CMSIS-DAP debug entries while preserving custom AmphiLink entries.
+- Fall back to ordinary CMake and clangd when STM32-specific VS Code extensions are unavailable.
 
-1. Generate a CMake project in STM32CubeMX
-2. Run `scripts/init_stm32_project.ps1` once (optionally with `-Register` for Windows Explorer integration)
-3. Open the project in VS Code
-4. Build or press F5 - new files are detected automatically
-5. For AmphiLink: use AmphiLink CFG Tool to save USB-bulk managed Cortex-Debug entry after ELF exists
+## Requirements
 
-## Installation
+- Windows PowerShell 5.1 or newer
+- STM32CubeMX configured to generate a CMake project
+- VS Code with CMake Tools, Ninja, and Cortex-Debug
+- ARM GNU toolchain and OpenOCD compatible with the target probe
+- Optional: STM32Cube VS Code extensions for the `cube-cmake`/`cube` tools
+- Optional: AmphiLink CFG Tool for AmphiLink hardware
 
-### Prerequisites
+## Install
 
-- STM32CubeMX
-- CMake
-- VS Code with Cortex-Debug extension (optional)
-- PowerShell 5.1+
+The skill root is the `skill` directory. Use that directory when installing or importing the skill into Codex.
 
-### Setup
+You can either clone this repository or download the latest `.skill` file from [Releases](https://github.com/cing3/stm32-cmake-vscode/releases/latest).
 
-1. Download the latest release from [Releases](https://github.com/YOUR_USERNAME/stm32-cmake-vscode/releases)
-2. Extract the skill directory to your preferred location
-3. Follow the usage instructions in the skill documentation
+## Use
 
-## Usage
+After creating the CMake project in CubeMX, run this from the repository root:
 
 ```powershell
-# Initialize a new STM32 project
-.\scripts\init_stm32_project.ps1
-
-# With Windows Explorer integration
-.\scripts\init_stm32_project.ps1 -Register
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\skill\scripts\init_stm32_project.ps1 -ProjectDir "D:\work\my-stm32-project"
 ```
+
+To register the Windows Explorer action once:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\skill\scripts\init_stm32_project.ps1 -Register
+```
+
+Then open the CubeMX project in VS Code and configure/build normally. The standard CubeMX single-config presets use `build/Debug` and `build/Release`; the generated debug entry follows the active `CMAKE_BUILD_TYPE`.
+
+For AmphiLink, build the ELF first, select the device in AmphiLink CFG Tool, and save its managed Cortex-Debug configuration. The generic DAPLink entry is intended for ordinary CMSIS-DAP probes.
 
 ## Documentation
 
-- [Portable Setup Guide](skill/references/portable-setup.md)
+- [Skill instructions](skill/SKILL.md)
+- [Portable setup](skill/references/portable-setup.md)
 - [Troubleshooting](skill/references/troubleshooting.md)
+
+## Safety
+
+The scripts do not flash firmware or install USB drivers automatically. Machine-specific tool paths are kept in the target project's `cmake/stm32-cmake-vscode-tools.json`; do not commit that file to shared projects.
 
 ## Validation
 
-The scripts pass PowerShell parsing and the skill passes validation tests. The automation has been tested against STM32H7 CubeMX projects with:
-
-- ARM GCC toolchain
-- FreeRTOS
-- Assembly startup files
-- Source auto-collection
-- CubeMX reconfigure
-- Cortex-Debug sessions
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit issues and pull requests.
+The scripts pass PowerShell 5.1 parsing and the skill passes the Codex skill validator. The automation has been exercised against STM32H7 projects with ARM GCC, FreeRTOS, assembly startup files, automatic source collection, CubeMX reconfiguration, and Debug/Release presets.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- STM32CubeMX for project generation
-- CMake for build system
-- VS Code and Cortex-Debug for development environment
+MIT. See [LICENSE](LICENSE).

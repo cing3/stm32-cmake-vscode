@@ -1,30 +1,20 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
-
-### Added
-- Initial release of the STM32 CMake + VS Code skill
-- Automatic CMake project generation from STM32CubeMX files
-- VS Code integration with Cortex-Debug
-- AmphiLink CFG Tool support
-- Fallback to standard CMake when extensions unavailable
-- Auto-detection of new source files
-
-### Changed
-- Improved README for public users
-- Added MIT License
-
-### Fixed
-- None yet
+All notable changes to this project are documented here.
 
 ## [1.0.0] - 2026-08-30
 
 ### Added
-- Core skill functionality
-- Scripts for project initialization
-- Documentation and troubleshooting guides
+
+- Portable STM32CubeMX CMake + VS Code skill.
+- PowerShell project initializer with optional Windows Explorer integration.
+- Automatic C/C++/assembly source and header discovery.
+- Automatic `.ioc`-triggered CMake reconfiguration.
+- Cortex-Debug/OpenOCD and optional AmphiLink workflow documentation.
+- Fallback behavior when STM32-specific VS Code extensions are unavailable.
+
+### Fixed
+
+- Corrected CMake Tools source-list settings to avoid parser races.
+- Added PowerShell 5.1 compatibility and project-local tool path manifests.
+- Preserved user-owned debug configurations and handled Debug/Release build paths.
