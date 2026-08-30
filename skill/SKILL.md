@@ -30,7 +30,7 @@ For non-default tool locations, pass `-BundleDir`, `-CubeCLTDir`, or `-OpenOCDDi
 
 ## Expected automation
 
-The injected CMake block uses `file(GLOB_RECURSE ... CONFIGURE_DEPENDS)` for user `.c`, `.cc`, `.cpp`, `.cxx`, `.s`, `.S`, and `.asm` files, derives include directories from `.h`, `.hh`, `.hpp`, and `.hxx` files, excludes generated Drivers/Middlewares/build trees, and registers the actual `.ioc` files as configure dependencies. The next Build therefore rechecks new files and CubeMX changes. The hook invokes the project-local `generate_vscode.ps1` during Configure, so projects remain portable after the skill directory is moved.
+The injected CMake block uses `file(GLOB_RECURSE ... CONFIGURE_DEPENDS)` for user `.c`, `.cc`, `.cpp`, `.cxx`, `.s`, `.S`, and `.asm` files, derives include directories from `.h`, `.hh`, `.hpp`, and `.hxx` files, excludes generated and common test/example/tool trees, and registers the actual `.ioc` files as configure dependencies. Override the `QODER_SOURCE_EXCLUDE_DIRS` cache variable when a project needs a different policy. The next Build therefore rechecks new files and CubeMX changes. The hook invokes the project-local `generate_vscode.ps1` during Configure and passes the actual `CMAKE_BINARY_DIR`, so custom preset output directories remain aligned with the generated ELF path.
 
 Global VS Code preferences should be set deliberately:
 
@@ -52,7 +52,7 @@ Use AmphiLink CFG Tool to select the wired device, verify the ELF and target con
 ## Verification sequence
 
 1. Initialize a clean CubeMX CMake project.
-2. Configure and build Debug with the project's ARM toolchain preset. The generator follows `build/<CMAKE_BUILD_TYPE>` for single-config presets; use the same convention for custom presets.
+2. Configure and build Debug with the project's ARM toolchain preset. The generator follows the active CMake binary directory, including custom preset output paths.
 3. Add a harmless `.c`/`.h` pair and build again; verify the new object is listed without editing CMake manually.
 4. Change a CubeMX setting, regenerate, then build; verify CMake re-runs Configure and the ELF links.
 5. Launch ST-Link or AmphiLink Cortex-Debug, set a breakpoint in `main`, and verify Continue, Step Over, Restart, and a clean Stop.

@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here.
 
+## [1.1.0] - 2026-08-30
+
+### Added
+
+- Follow the active CMake binary directory for custom presets and output layouts.
+- Configurable source-discovery exclusions, including common test/example/tool trees.
+- GitHub Actions validation for skill structure, PowerShell syntax, and path hygiene.
+
+### Fixed
+
+- Clarified custom build-directory behavior and automatic source-discovery boundaries.
+
 ## [1.0.0] - 2026-08-30
 
 ### Added

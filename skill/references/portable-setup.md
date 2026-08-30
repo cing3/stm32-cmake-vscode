@@ -13,6 +13,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\init_stm32_pro
 
 If explicit `-BundleDir`, `-CubeCLTDir`, or `-OpenOCDDir` arguments are used, the initializer also writes `cmake/stm32-cmake-vscode-tools.json` in the project. This is a local machine-path manifest used by later Configure runs; do not commit it to a shared repository unless that is intentional.
 
-The initializer copies both `qoder_stm32_auto.cmake` and `generate_vscode.ps1` into `<project>/cmake/`. This avoids a runtime dependency on the skill installation directory. Do not copy a project's `.vscode`, `.ioc`, build directory, device MAC, COM port, or personal user settings into the skill package.
+The initializer copies both `qoder_stm32_auto.cmake` and `generate_vscode.ps1` into `<project>/cmake/`. This avoids a runtime dependency on the skill installation directory. The generated hook passes CMake's actual binary directory to the generator, so custom `binaryDir` presets are supported. Do not copy a project's `.vscode`, `.ioc`, build directory, device MAC, COM port, or personal user settings into the skill package.
 
 The core workflow requires CMake Tools, Cortex-Debug, Ninja, an ARM GNU toolchain, and OpenOCD. The ST STM32 VS Code extensions (`stmicroelectronics.stm32-vscode-extension` and its build/clangd companions) are optional; the generator detects their `cube-cmake` and `cube` commands and falls back when they are absent. The hook invokes Windows PowerShell 5.1, so the bundled generator must remain compatible with that runtime.

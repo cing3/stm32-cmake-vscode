@@ -18,7 +18,11 @@ Confirm the project contains `cmake/qoder_stm32_auto.cmake` and `cmake/generate_
 
 ## Build uses MinGW instead of ARM GCC
 
-Use the project's `CMakePresets.json` or pass `-DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake` on a fresh build directory. The generated debug task follows `build/<CMAKE_BUILD_TYPE>`; if a custom preset uses another binary directory, update that preset convention before debugging. Do not diagnose Cortex-M assembler errors from a host compiler build as a source-collection failure.
+Use the project's `CMakePresets.json` or pass `-DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake` on a fresh build directory. The generated debug task follows CMake's actual binary directory, including custom presets. If the ELF path is still stale after changing a preset's `binaryDir`, re-run Configure to refresh `.vscode`. Do not diagnose Cortex-M assembler errors from a host compiler build as a source-collection failure.
+
+## An unrelated test or example source is being compiled
+
+Automatic discovery excludes common `tests`, `examples`, and `tools` directory names. Add project-specific names with `-DQODER_SOURCE_EXCLUDE_DIRS="..."` in the configure preset, or provide the complete replacement list when a default exclusion is intentional.
 
 ## STM32Cube pack reports “No index file found”
 

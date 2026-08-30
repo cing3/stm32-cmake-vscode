@@ -1,3 +1,3 @@
 interface:
-  display_name: "Stm32 Cmake Vscode"
-  short_description: "Help with Stm32 Cmake Vscode tasks"
+  display_name: "STM32 CMake + VS Code"
+  short_description: "Initialize and debug STM32CubeMX CMake projects"

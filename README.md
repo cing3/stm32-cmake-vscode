@@ -7,10 +7,12 @@ A portable Codex skill for developers who already use STM32CubeMX and want a low
 CubeMX remains responsible for creating and regenerating the CMake project. This skill initializes that generated project once, then keeps VS Code and CMake configuration synchronized:
 
 - Right-click or run one PowerShell script to initialize a project.
-- Automatically collect new C/C++/assembly sources and header include directories.
+- Automatically collect new C/C++/assembly sources and header include directories while excluding generated and common test/example/tool trees.
 - Reconfigure when the `.ioc` file or CMake inputs change.
 - Generate ST-Link and generic CMSIS-DAP debug entries while preserving custom AmphiLink entries.
 - Fall back to ordinary CMake and clangd when STM32-specific VS Code extensions are unavailable.
+
+The default source exclusions can be customized through the CMake cache variable `QODER_SOURCE_EXCLUDE_DIRS`.
 
 ## Requirements
 
@@ -41,7 +43,7 @@ To register the Windows Explorer action once:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\skill\scripts\init_stm32_project.ps1 -Register
 ```
 
-Then open the CubeMX project in VS Code and configure/build normally. The standard CubeMX single-config presets use `build/Debug` and `build/Release`; the generated debug entry follows the active `CMAKE_BUILD_TYPE`.
+Then open the CubeMX project in VS Code and configure/build normally. The generated debug entry follows CMake's actual binary directory, including custom preset output paths.
 
 For AmphiLink, build the ELF first, select the device in AmphiLink CFG Tool, and save its managed Cortex-Debug configuration. The generic DAPLink entry is intended for ordinary CMSIS-DAP probes.
 
@@ -57,7 +59,7 @@ The scripts do not flash firmware or install USB drivers automatically. Machine-
 
 ## Validation
 
-The scripts pass PowerShell 5.1 parsing and the skill passes the Codex skill validator. The automation has been exercised against STM32H7 projects with ARM GCC, FreeRTOS, assembly startup files, automatic source collection, CubeMX reconfiguration, and Debug/Release presets.
+The scripts pass PowerShell 5.1 parsing and the skill passes the Codex skill validator. GitHub Actions repeats the structural, syntax, and path-hygiene checks on future changes. The automation has been exercised against STM32H7 projects with ARM GCC, FreeRTOS, assembly startup files, automatic source collection, CubeMX reconfiguration, and Debug/Release presets.
 
 ## License
 

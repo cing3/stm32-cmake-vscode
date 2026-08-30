@@ -13,11 +13,13 @@
 #   使 Debug/Release 的 ELF 和 DAPLink 预启动构建保持一致。
 # =============================================================================
 execute_process(
+    # Use CMake's actual binary directory so custom presets and multi-config
+    # layouts do not force the generated debug entry into build/Debug.
     COMMAND "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File
         "${CMAKE_CURRENT_LIST_DIR}/generate_vscode.ps1"
         -ProjectDir "${CMAKE_SOURCE_DIR}"
         -ProjectName "${CMAKE_PROJECT_NAME}"
-        -BuildDir "build/${CMAKE_BUILD_TYPE}"
+        -BuildDir "${CMAKE_BINARY_DIR}"
     RESULT_VARIABLE QODER_GEN_RC
     OUTPUT_VARIABLE QODER_GEN_OUT
     ERROR_VARIABLE QODER_GEN_ERR

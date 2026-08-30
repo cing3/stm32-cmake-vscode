@@ -61,7 +61,13 @@ function Get-VersionSortKey([string]$Name) {
 
 $BuildDir = ($BuildDir -replace "\\", "/").Trim("/ ")
 if (-not $BuildDir) { $BuildDir = "build/Debug" }
-$buildPath = '${workspaceFolder}/' + $BuildDir
+# CMake hooks pass the actual CMAKE_BINARY_DIR, which may be absolute for
+# custom presets. Manual invocations can continue using workspace-relative paths.
+if ([System.IO.Path]::IsPathRooted($BuildDir)) {
+    $buildPath = $BuildDir
+} else {
+    $buildPath = '${workspaceFolder}/' + $BuildDir
+}
 
 # ============ 定位工程根 ============
 $ProjectDir = [System.IO.Path]::GetFullPath($ProjectDir)

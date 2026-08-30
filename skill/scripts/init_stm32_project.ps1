@@ -106,7 +106,19 @@ file(GLOB QODER_IOC_FILES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/*.ioc")
 foreach(_ioc IN LISTS QODER_IOC_FILES)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_ioc}")
 endforeach()
-# Collect user C/C++ and assembly sources recursively.
+# Collect user C/C++ and assembly sources recursively. The cache variable lets
+# projects add or remove directory-name exclusions without editing this block.
+set(QODER_SOURCE_EXCLUDE_DIRS "Drivers;Middlewares;cmake;build;CMakeFiles;tests;test;examples;example;tools;tool" CACHE STRING "Directory names excluded from automatic source discovery")
+set(QODER_SOURCE_EXCLUDE_REGEX "")
+foreach(_exclude_dir IN LISTS QODER_SOURCE_EXCLUDE_DIRS)
+    if(QODER_SOURCE_EXCLUDE_REGEX)
+        string(APPEND QODER_SOURCE_EXCLUDE_REGEX "|")
+    endif()
+    string(APPEND QODER_SOURCE_EXCLUDE_REGEX "${_exclude_dir}")
+endforeach()
+if(QODER_SOURCE_EXCLUDE_REGEX)
+    set(QODER_SOURCE_EXCLUDE_REGEX "/(${QODER_SOURCE_EXCLUDE_REGEX})/")
+endif()
 file(GLOB_RECURSE QODER_USER_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_SOURCE_DIR}/*.c"
     "${CMAKE_SOURCE_DIR}/*.cc"
@@ -116,7 +128,9 @@ file(GLOB_RECURSE QODER_USER_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_SOURCE_DIR}/*.S"
     "${CMAKE_SOURCE_DIR}/*.asm"
 )
-list(FILTER QODER_USER_SOURCES EXCLUDE REGEX "/(Drivers|cmake|build[^/]*|CMakeFiles|Middlewares)/")
+if(QODER_SOURCE_EXCLUDE_REGEX)
+    list(FILTER QODER_USER_SOURCES EXCLUDE REGEX "${QODER_SOURCE_EXCLUDE_REGEX}")
+endif()
 list(FILTER QODER_USER_SOURCES EXCLUDE REGEX "system_stm32.*\.c$")
 set(QODER_USER_CXX_SOURCES "")
 foreach(_src IN LISTS QODER_USER_SOURCES)
@@ -136,7 +150,9 @@ file(GLOB_RECURSE QODER_USER_HEADERS CONFIGURE_DEPENDS
     "${CMAKE_SOURCE_DIR}/*.hpp"
     "${CMAKE_SOURCE_DIR}/*.hxx"
 )
-list(FILTER QODER_USER_HEADERS EXCLUDE REGEX "/(Drivers|cmake|build[^/]*|CMakeFiles|Middlewares)/")
+if(QODER_SOURCE_EXCLUDE_REGEX)
+    list(FILTER QODER_USER_HEADERS EXCLUDE REGEX "${QODER_SOURCE_EXCLUDE_REGEX}")
+endif()
 set(QODER_USER_INCLUDE_DIRS "")
 foreach(_hdr IN LISTS QODER_USER_HEADERS)
     get_filename_component(_dir "${_hdr}" DIRECTORY)
@@ -189,7 +205,7 @@ Write-Host "1. 用 VSCode 打开: $ProjectDir"
 Write-Host "2. 等 ST 扩展自动 Configure（.vscode 已在，configure 会再刷新一次，幂等）"
 Write-Host "3. ST-Link: Ctrl+Shift+D 选 'STM32Cube: Launch ST-Link GDB Server' -> F5"
 Write-Host "   DAPLink: 选 'STM32 Debug (DAPLink)' -> F5（preLaunchTask 自动编译）"
-Write-Host "4. 新文件放任意层（Application/Modules/src 等），保存后直接 Build，自动收录"
+Write-Host "4. 新文件放任意用户目录（Application/Modules/src 等），保存后直接 Build，自动收录"
 Write-Host ""
 Write-Host "之后 CubeMX 改了芯片/引脚重新生成，直接打开 VSCode 即可："
 Write-Host "configure 会自动刷新 .vscode 的芯片型号（device/svdFile/target.cfg）。"

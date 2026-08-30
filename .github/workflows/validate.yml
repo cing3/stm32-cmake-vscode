@@ -1,0 +1,45 @@
+name: Validate skill
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  windows-validation:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate skill files
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $skill = Join-Path $env:GITHUB_WORKSPACE 'skill'
+          $required = @(
+            'SKILL.md',
+            'agents/openai.yaml',
+            'references/portable-setup.md',
+            'references/troubleshooting.md',
+            'scripts/init_stm32_project.ps1',
+            'scripts/generate_vscode.ps1',
+            'scripts/qoder_stm32_auto.cmake'
+          )
+          foreach ($relative in $required) {
+            if (-not (Test-Path -LiteralPath (Join-Path $skill $relative))) {
+              throw "Missing skill file: $relative"
+            }
+          }
+          $skillText = Get-Content -LiteralPath (Join-Path $skill 'SKILL.md') -Raw
+          if ($skillText -notmatch '(?s)^---\s*\r?\nname:\s*[^\r\n]+\r?\ndescription:\s*[^\r\n]+\r?\n---') {
+            throw 'SKILL.md frontmatter is invalid'
+          }
+          foreach ($script in Get-ChildItem -LiteralPath (Join-Path $skill 'scripts') -Filter '*.ps1' -File) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($script.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count) { throw "PowerShell parse failed: $($script.Name)" }
+          }
+          $forbidden = 'YOUR_USERNAME|C:/Users/cing|C:\\Users\\cing|D:/kkeeiill2|D:\\kkeeiill2|D:/stm32cubeclt|D:\\stm32cubeclt'
+          $matches = git grep -n -I -E $forbidden -- . 2>$null
+          if ($LASTEXITCODE -eq 0 -and $matches) { throw "Maintainer-specific path found:`n$matches" }
