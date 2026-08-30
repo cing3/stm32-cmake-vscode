@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [1.1.1] - 2026-08-30
+
+### Added
+
+- Documented project-root selection, project and Skill relocation, cross-computer tool-path refresh, multiple `.ioc` handling, and JSONC recovery.
+
 ## [1.1.0] - 2026-08-30
 
 ### Added

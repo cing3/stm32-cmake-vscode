@@ -26,6 +26,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\init_stm32_pro
 
 The initializer validates `.ioc` and `CMakeLists.txt`, copies the generator and CMake hook into the project's `cmake/` directory, injects an idempotent `QODER_AUTO_CONFIG` block, and creates `.vscode` files. Register the Windows Explorer action once with `-Register`; remove it with `-Unregister`.
 
+Always pass the project root that directly contains the `.ioc` and top-level `CMakeLists.txt`, and open that same root in VS Code. Moving an initialized project is supported after one Configure; moving the Skill installation requires re-registering the Explorer action. A project moved to another computer must refresh its machine-specific tool paths. Keep one main root-level `.ioc` per project, and repair JSONC or malformed VS Code files before asking the generator to update them.
+
 For non-default tool locations, pass `-BundleDir`, `-CubeCLTDir`, or `-OpenOCDDir`, or set the matching environment variables before running the initializer. Never bake a maintainer's absolute path into a distributed skill.
 
 ## Expected automation

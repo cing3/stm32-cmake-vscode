@@ -1,5 +1,25 @@
 # Troubleshooting
 
+## Always operate on the project root
+
+Run the initializer and open the folder that directly contains the project's `.ioc` and top-level `CMakeLists.txt`. Do not run it from `cmake/`, `cmake/stm32cubemx/`, `build/`, or a VS Code workspace that contains several projects. If the script reports that `.ioc` or `CMakeLists.txt` is missing, correct `-ProjectDir` first; do not create placeholder files.
+
+## The project or Skill was moved
+
+Moving an initialized project within the same computer is supported because the generator and CMake hook are copied into the project's `cmake/` directory and relative build paths use `${workspaceFolder}`. After moving it, open the new project root in VS Code and run Configure once so `.vscode/launch.json` is refreshed.
+
+Moving the project to another computer requires the tools to be installed or supplied again with `-BundleDir`, `-CubeCLTDir`, and `-OpenOCDDir`, or the matching environment variables. The file `cmake/stm32-cmake-vscode-tools.json` contains machine-specific paths; remove it or overwrite it for the new computer, and do not commit it to a shared repository.
+
+Moving the Skill repository itself does not break an already initialized project, but it does break a Windows Explorer action registered with `-Register`, because that registry entry stores the old script path. Run `-Unregister` and then `-Register` from the new Skill location.
+
+## The wrong `.ioc` file is used
+
+Keep exactly one main `.ioc` file in the project root. The scripts select the first root-level `.ioc` returned by the filesystem. If a project has several configurations, put secondary `.ioc` files in another directory or initialize each project separately; do not rely on selection order.
+
+## VS Code configuration is not regenerated
+
+The generator writes pure JSON and deliberately leaves JSONC or malformed `launch.json`, `tasks.json`, and `settings.json` untouched. If a file contains comments or has invalid JSON, back it up, convert it to valid JSON or fix the syntax, then run Configure again. The generator preserves unknown debug entries, including AmphiLink entries, so do not delete the entire file unless you intend to recreate all custom entries.
+
 ## Parse error in `cmake/stm32cubemx/CMakeLists.txt`
 
 Set `cmake.modifyLists.addNewSourceFiles` and `cmake.modifyLists.removeDeletedSourceFiles` to `no`, reload the VS Code window, and let the top-level `CONFIGURE_DEPENDS` block collect user files. CMake Tools accepts `no`, `yes`, or `ask`; `never` is invalid. The CubeMX subproject should not be edited by CMake Tools.

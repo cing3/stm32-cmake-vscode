@@ -47,6 +47,8 @@ Then open the CubeMX project in VS Code and configure/build normally. The genera
 
 For AmphiLink, build the ELF first, select the device in AmphiLink CFG Tool, and save its managed Cortex-Debug configuration. The generic DAPLink entry is intended for ordinary CMSIS-DAP probes.
 
+When troubleshooting, operate on the project root containing the `.ioc` and top-level `CMakeLists.txt`. Moving a project requires one Configure; moving the Skill installation requires `-Unregister` followed by `-Register`. Cross-computer moves require refreshing tool paths, and a project root should contain only one main `.ioc`. See [Troubleshooting](skill/references/troubleshooting.md) for recovery steps when VS Code JSON files are malformed or use JSONC comments.
+
 ## Documentation
 
 - [Skill instructions](skill/SKILL.md)
