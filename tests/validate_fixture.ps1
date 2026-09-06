@@ -63,12 +63,21 @@ try {
     Assert-True (@($dap.preLaunchCommands) -contains 'set remotetimeout 10') 'Generic DAPLink configuration is missing the GDB timeout.'
 
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    $vsInstance = ''
     if (Test-Path -LiteralPath $vswhere) {
+        $vsInstance = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null | Select-Object -First 1)
+    }
+    $compiler = @(
+        (Get-Command gcc.exe -ErrorAction SilentlyContinue),
+        (Get-Command clang.exe -ErrorAction SilentlyContinue),
+        (Get-Command clang-cl.exe -ErrorAction SilentlyContinue)
+    ) | Where-Object { $_ } | Select-Object -First 1
+    if ($vsInstance) {
         $configureArgs = @('-S', $projectDir, '-B', $buildDir, '-G', 'Visual Studio 17 2022', '-A', 'x64')
-    } elseif (Get-Command ninja -ErrorAction SilentlyContinue) {
-        $configureArgs = @('-S', $projectDir, '-B', $buildDir, '-G', 'Ninja')
+    } elseif ((Get-Command ninja -ErrorAction SilentlyContinue) -and $compiler) {
+        $configureArgs = @('-S', $projectDir, '-B', $buildDir, '-G', 'Ninja', "-DCMAKE_C_COMPILER=$($compiler.Source)")
     } else {
-        throw 'No supported CMake generator found (Visual Studio 17 2022 or Ninja).'
+        throw 'No supported CMake generator/compiler found (Visual Studio with C++ tools, or Ninja with GCC/Clang).'
     }
     Write-Host '[fixture] configure and build'
     Invoke-Checked $cmake $configureArgs | Out-Null
