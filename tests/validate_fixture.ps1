@@ -102,3 +102,4 @@ try {
 }
 
 Write-Host 'STM32 skill fixture validation passed.'
+exit 0
