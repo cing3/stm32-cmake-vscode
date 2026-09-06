@@ -65,17 +65,19 @@ try {
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
     $vsInstance = ''
     if (Test-Path -LiteralPath $vswhere) {
-        $vsInstance = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null | Select-Object -First 1)
+        $vsInstance = ((& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null | Select-Object -First 1) -as [string]).Trim()
     }
     $compiler = @(
         (Get-Command gcc.exe -ErrorAction SilentlyContinue),
         (Get-Command clang.exe -ErrorAction SilentlyContinue),
         (Get-Command clang-cl.exe -ErrorAction SilentlyContinue)
     ) | Where-Object { $_ } | Select-Object -First 1
-    if ($vsInstance) {
+    $vsUsable = $vsInstance -and (Test-Path -LiteralPath (Join-Path $vsInstance 'Common7\IDE\devenv.exe'))
+    if ($vsUsable) {
         $configureArgs = @('-S', $projectDir, '-B', $buildDir, '-G', 'Visual Studio 17 2022', '-A', 'x64')
     } elseif ((Get-Command ninja -ErrorAction SilentlyContinue) -and $compiler) {
-        $configureArgs = @('-S', $projectDir, '-B', $buildDir, '-G', 'Ninja', "-DCMAKE_C_COMPILER=$($compiler.Source)")
+        $compilerPath = $compiler.Source -replace '\\', '/'
+        $configureArgs = @('-S', $projectDir, '-B', $buildDir, '-G', 'Ninja', "-DCMAKE_C_COMPILER=$compilerPath")
     } else {
         throw 'No supported CMake generator/compiler found (Visual Studio with C++ tools, or Ninja with GCC/Clang).'
     }
