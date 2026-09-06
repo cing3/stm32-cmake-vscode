@@ -73,11 +73,11 @@ try {
         (Get-Command clang-cl.exe -ErrorAction SilentlyContinue)
     ) | Where-Object { $_ } | Select-Object -First 1
     $vsUsable = $vsInstance -and (Test-Path -LiteralPath (Join-Path $vsInstance 'Common7\IDE\devenv.exe'))
-    if ($vsUsable) {
-        $configureArgs = @('-S', $projectDir, '-B', $buildDir, '-G', 'Visual Studio 17 2022', '-A', 'x64')
-    } elseif ((Get-Command ninja -ErrorAction SilentlyContinue) -and $compiler) {
+    if ((Get-Command ninja -ErrorAction SilentlyContinue) -and $compiler) {
         $compilerPath = $compiler.Source -replace '\\', '/'
         $configureArgs = @('-S', $projectDir, '-B', $buildDir, '-G', 'Ninja', "-DCMAKE_C_COMPILER=$compilerPath")
+    } elseif ($vsUsable) {
+        $configureArgs = @('-S', $projectDir, '-B', $buildDir, '-G', 'Visual Studio 17 2022', '-A', 'x64')
     } else {
         throw 'No supported CMake generator/compiler found (Visual Studio with C++ tools, or Ninja with GCC/Clang).'
     }
