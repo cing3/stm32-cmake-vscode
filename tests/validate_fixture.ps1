@@ -21,6 +21,7 @@ function Assert-True([bool]$Condition, [string]$Message) {
 }
 
 try {
+    Write-Host '[fixture] prepare project'
     Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
     Copy-Item -LiteralPath $fixtureRoot -Destination $projectDir -Recurse -Force
@@ -31,6 +32,7 @@ try {
 
     # The project lives below a directory named "tests" on purpose. The old
     # absolute-path regex incorrectly excluded every source in this layout.
+    Write-Host '[fixture] initialize project'
     Invoke-Checked 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $initializer, '-ProjectDir', $projectDir) | Out-Null
 
     $amphiLaunch = @'
@@ -49,6 +51,7 @@ try {
 }
 '@
     [System.IO.File]::WriteAllText((Join-Path $projectDir '.vscode\launch.json'), $amphiLaunch, (New-Object System.Text.UTF8Encoding($false)))
+    Write-Host '[fixture] harden launch.json'
     Invoke-Checked 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $generator, '-ProjectDir', $projectDir, '-ProjectName', 'qoder_fixture', '-BuildDir', $buildDir) | Out-Null
 
     $launch = Get-Content -LiteralPath (Join-Path $projectDir '.vscode\launch.json') -Raw | ConvertFrom-Json
@@ -67,16 +70,22 @@ try {
     } else {
         throw 'No supported CMake generator found (Visual Studio 17 2022 or Ninja).'
     }
+    Write-Host '[fixture] configure and build'
     Invoke-Checked $cmake $configureArgs | Out-Null
     Invoke-Checked $cmake @('--build', $buildDir, '--config', 'Debug') | Out-Null
 
     # A generator failure must stop Configure instead of leaving stale debug files.
+    Write-Host '[fixture] verify configure blocks generator failure'
     [System.IO.File]::WriteAllText($generator, 'exit 7', (New-Object System.Text.UTF8Encoding($false)))
     $brokenArgs = @('-S', $projectDir, '-B', $brokenBuildDir) + ($configureArgs | Select-Object -Skip 4)
     $brokenOutput = & $cmake @($brokenArgs) 2>&1 | Out-String
     $brokenCode = $LASTEXITCODE
     Assert-True ($brokenCode -ne 0) 'CMake Configure unexpectedly succeeded after the .vscode generator failed.'
     Assert-True ($brokenOutput -match 'qoder \.vscode auto-generate failed') 'CMake output did not expose the qoder generator failure.'
+} catch {
+    $message = ($_.Exception.Message -replace '[\r\n]+', ' ')
+    Write-Output "::error file=tests/validate_fixture.ps1,line=1::$message"
+    throw
 } finally {
     Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
