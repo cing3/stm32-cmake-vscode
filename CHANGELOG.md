@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Added
+
+- Windows CMake fixture validation covering initialization, source discovery, build, AmphiLink launch hardening, and generator-failure handling.
+
+### Fixed
+
+- AmphiLink Cortex-Debug entries now receive an automatic `CMake Build` pre-launch task and a 10-second wireless GDB timeout during Configure.
+- Source exclusions now compare exact relative directory components instead of an absolute-path regular expression.
+- Initialization and Configure now stop visibly when `.vscode` generation fails, preventing stale debug configurations from being used.
+- Initialized projects now stop Configure if the project-local automation hook itself is missing.
+
 ## [1.1.1] - 2026-08-30
 
 ### Added

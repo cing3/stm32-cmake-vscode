@@ -109,16 +109,35 @@ endforeach()
 # Collect user C/C++ and assembly sources recursively. The cache variable lets
 # projects add or remove directory-name exclusions without editing this block.
 set(QODER_SOURCE_EXCLUDE_DIRS "Drivers;Middlewares;cmake;build;CMakeFiles;tests;test;examples;example;tools;tool" CACHE STRING "Directory names excluded from automatic source discovery")
-set(QODER_SOURCE_EXCLUDE_REGEX "")
+set(QODER_SOURCE_EXCLUDE_DIRS_LOWER "")
 foreach(_exclude_dir IN LISTS QODER_SOURCE_EXCLUDE_DIRS)
-    if(QODER_SOURCE_EXCLUDE_REGEX)
-        string(APPEND QODER_SOURCE_EXCLUDE_REGEX "|")
-    endif()
-    string(APPEND QODER_SOURCE_EXCLUDE_REGEX "${_exclude_dir}")
+    string(TOLOWER "${_exclude_dir}" _exclude_dir_lower)
+    list(APPEND QODER_SOURCE_EXCLUDE_DIRS_LOWER "${_exclude_dir_lower}")
 endforeach()
-if(QODER_SOURCE_EXCLUDE_REGEX)
-    set(QODER_SOURCE_EXCLUDE_REGEX "/(${QODER_SOURCE_EXCLUDE_REGEX})/")
-endif()
+# Compare path components relative to the project root. This avoids both
+# regex metacharacter surprises and false exclusions caused by a parent folder
+# named "tests" or "tools" outside the project itself.
+function(qoder_filter_excluded_paths _out_var)
+    set(_filtered "")
+    foreach(_path IN LISTS ARGN)
+        file(RELATIVE_PATH _relative_path "${CMAKE_SOURCE_DIR}" "${_path}")
+        get_filename_component(_relative_dir "${_relative_path}" DIRECTORY)
+        string(REPLACE "\\" "/" _relative_dir "${_relative_dir}")
+        string(REPLACE "/" ";" _relative_parts "${_relative_dir}")
+        set(_excluded FALSE)
+        foreach(_part IN LISTS _relative_parts)
+            string(TOLOWER "${_part}" _part_lower)
+            if(_part_lower IN_LIST QODER_SOURCE_EXCLUDE_DIRS_LOWER)
+                set(_excluded TRUE)
+                break()
+            endif()
+        endforeach()
+        if(NOT _excluded)
+            list(APPEND _filtered "${_path}")
+        endif()
+    endforeach()
+    set(${_out_var} "${_filtered}" PARENT_SCOPE)
+endfunction()
 file(GLOB_RECURSE QODER_USER_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_SOURCE_DIR}/*.c"
     "${CMAKE_SOURCE_DIR}/*.cc"
@@ -128,9 +147,7 @@ file(GLOB_RECURSE QODER_USER_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_SOURCE_DIR}/*.S"
     "${CMAKE_SOURCE_DIR}/*.asm"
 )
-if(QODER_SOURCE_EXCLUDE_REGEX)
-    list(FILTER QODER_USER_SOURCES EXCLUDE REGEX "${QODER_SOURCE_EXCLUDE_REGEX}")
-endif()
+qoder_filter_excluded_paths(QODER_USER_SOURCES ${QODER_USER_SOURCES})
 list(FILTER QODER_USER_SOURCES EXCLUDE REGEX "system_stm32.*\.c$")
 set(QODER_USER_CXX_SOURCES "")
 foreach(_src IN LISTS QODER_USER_SOURCES)
@@ -150,9 +167,7 @@ file(GLOB_RECURSE QODER_USER_HEADERS CONFIGURE_DEPENDS
     "${CMAKE_SOURCE_DIR}/*.hpp"
     "${CMAKE_SOURCE_DIR}/*.hxx"
 )
-if(QODER_SOURCE_EXCLUDE_REGEX)
-    list(FILTER QODER_USER_HEADERS EXCLUDE REGEX "${QODER_SOURCE_EXCLUDE_REGEX}")
-endif()
+qoder_filter_excluded_paths(QODER_USER_HEADERS ${QODER_USER_HEADERS})
 set(QODER_USER_INCLUDE_DIRS "")
 foreach(_hdr IN LISTS QODER_USER_HEADERS)
     get_filename_component(_dir "${_hdr}" DIRECTORY)
@@ -161,9 +176,12 @@ endforeach()
 list(REMOVE_DUPLICATES QODER_USER_INCLUDE_DIRS)
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${QODER_USER_INCLUDE_DIRS})
 
-# [附加] .vscode 自动生成/刷新（依赖模板目录；缺失则静默跳过，不影响编译）
+# [附加] .vscode 自动生成/刷新。初始化后的工程必须保留这个项目内钩子，
+# 否则继续 Configure 会留下可能过期的调试路径，故缺失时明确阻断。
 if(EXISTS "__QODER_AUTO_CMAKE__")
     include("__QODER_AUTO_CMAKE__")
+else()
+    message(FATAL_ERROR "Missing project-local qoder_stm32_auto.cmake; rerun init_stm32_project.ps1 before configuring.")
 endif()
 # ==================== QODER_AUTO_CONFIG END ====================
 '@
@@ -194,6 +212,8 @@ if ($OpenOCDDir) { $generatorArgs += @('-OpenOCDDir', $OpenOCDDir) }
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $GENERATOR @generatorArgs
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  [错误] .vscode 生成失败（退出码 $LASTEXITCODE）" -ForegroundColor Red
+    Write-Host "  初始化已中止：请修复工具路径或 JSON 配置后重新运行，不要在不完整配置上继续 Configure/Debug。" -ForegroundColor Red
+    exit $LASTEXITCODE
 } else {
     Write-Host "  [OK] .vscode 已就位" -ForegroundColor Green
 }

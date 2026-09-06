@@ -1,0 +1,84 @@
+$ErrorActionPreference = 'Stop'
+
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$fixtureRoot = Join-Path $PSScriptRoot 'fixtures\minimal'
+$testRoot = Join-Path $repoRoot '.test-artifacts\tests'
+$projectDir = Join-Path $testRoot 'fixture'
+$buildDir = Join-Path $testRoot 'build'
+$brokenBuildDir = Join-Path $testRoot 'broken-config'
+
+function Invoke-Checked([string]$FilePath, [string[]]$Arguments) {
+    $output = & $FilePath @Arguments 2>&1 | Out-String
+    $code = $LASTEXITCODE
+    if ($code -ne 0) {
+        throw "Command failed ($code): $FilePath $($Arguments -join ' ')`n$output"
+    }
+    return $output
+}
+
+function Assert-True([bool]$Condition, [string]$Message) {
+    if (-not $Condition) { throw $Message }
+}
+
+try {
+    Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
+    Copy-Item -LiteralPath $fixtureRoot -Destination $projectDir -Recurse -Force
+
+    $initializer = Join-Path $repoRoot 'skill\scripts\init_stm32_project.ps1'
+    $generator = Join-Path $projectDir 'cmake\generate_vscode.ps1'
+    $cmake = (Get-Command cmake -ErrorAction Stop).Source
+
+    # The project lives below a directory named "tests" on purpose. The old
+    # absolute-path regex incorrectly excluded every source in this layout.
+    Invoke-Checked 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $initializer, '-ProjectDir', $projectDir) | Out-Null
+
+    $amphiLaunch = @'
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "AmphiLink CFG: fixture",
+      "type": "cortex-debug",
+      "request": "launch",
+      "servertype": "openocd",
+      "configFiles": ["${workspaceFolder}/.vscode/amphilink-cfg-openocd.cfg"],
+      "executable": "${workspaceFolder}/build/Debug/qoder_fixture.elf"
+    }
+  ]
+}
+'@
+    [System.IO.File]::WriteAllText((Join-Path $projectDir '.vscode\launch.json'), $amphiLaunch, (New-Object System.Text.UTF8Encoding($false)))
+    Invoke-Checked 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $generator, '-ProjectDir', $projectDir, '-ProjectName', 'qoder_fixture', '-BuildDir', $buildDir) | Out-Null
+
+    $launch = Get-Content -LiteralPath (Join-Path $projectDir '.vscode\launch.json') -Raw | ConvertFrom-Json
+    $amphi = @($launch.configurations | Where-Object { $_.name -like 'AmphiLink*' }) | Select-Object -First 1
+    Assert-True ($null -ne $amphi) 'AmphiLink configuration was not preserved.'
+    Assert-True ($amphi.preLaunchTask -eq 'CMake Build') 'AmphiLink configuration is missing preLaunchTask.'
+    Assert-True (@($amphi.preLaunchCommands) -contains 'set remotetimeout 10') 'AmphiLink configuration is missing the wireless GDB timeout.'
+    $dap = @($launch.configurations | Where-Object { $_.name -eq 'STM32 Debug (DAPLink)' }) | Select-Object -First 1
+    Assert-True (@($dap.preLaunchCommands) -contains 'set remotetimeout 10') 'Generic DAPLink configuration is missing the GDB timeout.'
+
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (Test-Path -LiteralPath $vswhere) {
+        $configureArgs = @('-S', $projectDir, '-B', $buildDir, '-G', 'Visual Studio 17 2022', '-A', 'x64')
+    } elseif (Get-Command ninja -ErrorAction SilentlyContinue) {
+        $configureArgs = @('-S', $projectDir, '-B', $buildDir, '-G', 'Ninja')
+    } else {
+        throw 'No supported CMake generator found (Visual Studio 17 2022 or Ninja).'
+    }
+    Invoke-Checked $cmake $configureArgs | Out-Null
+    Invoke-Checked $cmake @('--build', $buildDir, '--config', 'Debug') | Out-Null
+
+    # A generator failure must stop Configure instead of leaving stale debug files.
+    [System.IO.File]::WriteAllText($generator, 'exit 7', (New-Object System.Text.UTF8Encoding($false)))
+    $brokenArgs = @('-S', $projectDir, '-B', $brokenBuildDir) + ($configureArgs | Select-Object -Skip 4)
+    $brokenOutput = & $cmake @($brokenArgs) 2>&1 | Out-String
+    $brokenCode = $LASTEXITCODE
+    Assert-True ($brokenCode -ne 0) 'CMake Configure unexpectedly succeeded after the .vscode generator failed.'
+    Assert-True ($brokenOutput -match 'qoder \.vscode auto-generate failed') 'CMake output did not expose the qoder generator failure.'
+} finally {
+    Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+Write-Host 'STM32 skill fixture validation passed.'

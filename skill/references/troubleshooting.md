@@ -20,6 +20,8 @@ Keep exactly one main `.ioc` file in the project root. The scripts select the fi
 
 The generator writes pure JSON and deliberately leaves JSONC or malformed `launch.json`, `tasks.json`, and `settings.json` untouched. If a file contains comments or has invalid JSON, back it up, convert it to valid JSON or fix the syntax, then run Configure again. The generator preserves unknown debug entries, including AmphiLink entries, so do not delete the entire file unless you intend to recreate all custom entries.
 
+For AmphiLink entries, Configure also restores `preLaunchTask: CMake Build` and `preLaunchCommands: ["set remotetimeout 10"]` when the extension-created entry does not contain them. The extension may replace its managed entry when Save is clicked; run Configure once after that save so the workflow fields are restored.
+
 ## Parse error in `cmake/stm32cubemx/CMakeLists.txt`
 
 Set `cmake.modifyLists.addNewSourceFiles` and `cmake.modifyLists.removeDeletedSourceFiles` to `no`, reload the VS Code window, and let the top-level `CONFIGURE_DEPENDS` block collect user files. CMake Tools accepts `no`, `yes`, or `ask`; `never` is invalid. The CubeMX subproject should not be edited by CMake Tools.
@@ -34,7 +36,9 @@ Confirm the device is `AmphiLink (CMSIS-DAP V2)` with VID/PID `303A:83B3`. Windo
 
 ## Configure cannot run the auto hook
 
-Confirm the project contains `cmake/qoder_stm32_auto.cmake` and `cmake/generate_vscode.ps1`. If explicit tool paths were used, also confirm `cmake/stm32-cmake-vscode-tools.json` exists. Re-run the initializer to repair missing project-local copies. The hook must use `${CMAKE_CURRENT_LIST_DIR}/generate_vscode.ps1`, not a maintainer-specific absolute path.
+Confirm the project contains `cmake/qoder_stm32_auto.cmake` and `cmake/generate_vscode.ps1`. If explicit tool paths were used, also confirm `cmake/stm32-cmake-vscode-tools.json` exists. Re-run the initializer to repair missing project-local copies; Configure intentionally stops when the hook is missing. The hook must use `${CMAKE_CURRENT_LIST_DIR}/generate_vscode.ps1`, not a maintainer-specific absolute path.
+
+If Configure reports `qoder .vscode auto-generate failed`, read the captured stdout/stderr in the CMake output. Configure intentionally stops in this case so an old ELF/debug path cannot be mistaken for a current configuration. Fix the local generator/tool/JSON issue, then Configure again.
 
 ## Build uses MinGW instead of ARM GCC
 
@@ -42,7 +46,11 @@ Use the project's `CMakePresets.json` or pass `-DCMAKE_TOOLCHAIN_FILE=cmake/gcc-
 
 ## An unrelated test or example source is being compiled
 
-Automatic discovery excludes common `tests`, `examples`, and `tools` directory names. Add project-specific names with `-DQODER_SOURCE_EXCLUDE_DIRS="..."` in the configure preset, or provide the complete replacement list when a default exclusion is intentional.
+Automatic discovery excludes common `tests`, `examples`, and `tools` directory names by exact, case-insensitive path component relative to the project root. A parent folder outside the project with one of those names is not excluded. Add project-specific names with `-DQODER_SOURCE_EXCLUDE_DIRS="..."` in the configure preset, or provide the complete replacement list when a default exclusion is intentional.
+
+## Wireless GDB reports keep-alive warnings
+
+The generated DAPLink and AmphiLink entries send `set remotetimeout 10` before launch. This allows a wireless CMSIS-DAP link to spend longer on a reset or register operation before GDB reports an idle timeout. It does not repair a device-side TCP disconnect; for `CMSIS-DAP: connection closed by peer`, check the AmphiLink device state, network reachability, and whether another debug client is connected.
 
 ## STM32Cube pack reports “No index file found”
 

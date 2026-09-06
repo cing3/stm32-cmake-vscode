@@ -17,6 +17,7 @@ cmake/stm32-cmake-vscode-tools.json
 *.tmp
 *.bak
 *.swp
+.test-artifacts/
 
 # OS-specific files
 .DS_Store

@@ -51,6 +51,42 @@ function ConvertTo-HashtableCompat($InputObject) {
     return $InputObject
 }
 
+function Test-AmphiLinkConfiguration($Configuration) {
+    if ($null -eq $Configuration) { return $false }
+    $name = [string]$Configuration.name
+    if ($name -match '(?i)amphilink') { return $true }
+    foreach ($configFile in @($Configuration.configFiles)) {
+        if ([string]$configFile -match '(?i)(^|[/\\])amphilink-cfg-openocd\.cfg$') { return $true }
+    }
+    return $false
+}
+
+function Set-ConfigurationProperty($Configuration, [string]$Name, $Value) {
+    $property = $Configuration.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        $Configuration | Add-Member -NotePropertyName $Name -NotePropertyValue $Value
+    } else {
+        $Configuration.$Name = $Value
+    }
+}
+
+function Ensure-AmphiLinkDefaults($Configuration) {
+    if (-not (Test-AmphiLinkConfiguration $Configuration)) { return $Configuration }
+
+    # The AmphiLink extension owns this entry and may recreate it after a save.
+    # Re-apply the two workflow guarantees whenever CMake configures again:
+    # build the current ELF first, then give wireless GDB a longer idle timeout.
+    if (-not $Configuration.preLaunchTask) {
+        Set-ConfigurationProperty $Configuration 'preLaunchTask' 'CMake Build'
+    }
+    $commands = @($Configuration.preLaunchCommands | Where-Object { $_ })
+    if ($commands -notcontains 'set remotetimeout 10') {
+        $commands += 'set remotetimeout 10'
+        Set-ConfigurationProperty $Configuration 'preLaunchCommands' $commands
+    }
+    return $Configuration
+}
+
 function Get-VersionSortKey([string]$Name) {
     $match = [regex]::Match($Name, '(?<!\d)\d+(?:\.\d+){1,3}(?!\d)')
     if ($match.Success) {
@@ -274,6 +310,7 @@ $dap = [ordered]@{
     executable  = $buildPath + '/' + $ProjectName + '.elf'
     runToEntryPoint = 'main'
     preLaunchTask   = 'CMake Build'
+    preLaunchCommands = @('set remotetimeout 10')
     configFiles = $cfgFiles
 }
 if ($device)           { $dap['device'] = $device }
@@ -298,7 +335,9 @@ if ($launchCanWrite) {
     if (-not $launchObj) { $launchObj = [pscustomobject]@{ version = '0.2.0'; configurations = @() } }
     $existingConfigs = @($launchObj.configurations)
     $managedNames = @('STM32Cube: Launch ST-Link GDB Server', 'STM32 Debug (DAPLink)')
-    $keptConfigs = @($existingConfigs | Where-Object { $_.name -notin $managedNames })
+    $keptConfigs = @($existingConfigs |
+        Where-Object { $_.name -notin $managedNames } |
+        ForEach-Object { Ensure-AmphiLinkDefaults $_ })
     if ($dapIncomplete) {
         $oldDap = $existingConfigs | Where-Object { $_.name -eq 'STM32 Debug (DAPLink)' } | Select-Object -First 1
         if ($oldDap -and ($oldDap.serverpath -or $oldDap.openocdPath) -and $oldDap.executable) { $configs = @($official, $oldDap) }
