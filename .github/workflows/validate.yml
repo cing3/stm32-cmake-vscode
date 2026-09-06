@@ -49,6 +49,7 @@ jobs:
           $grepExitCode = $LASTEXITCODE
           if ($grepExitCode -eq 0 -and $matches) { throw "Maintainer-specific path found:`n$matches" }
           if ($grepExitCode -notin @(0, 1)) { throw "git grep failed with exit code $grepExitCode" }
+          exit 0
       - name: Run CMake and generator fixture
         shell: pwsh
         run: ./tests/validate_fixture.ps1
