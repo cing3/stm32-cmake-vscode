@@ -21,6 +21,7 @@
     powershell -File generate_vscode.ps1 -ProjectDir "D:\my_project" -ProjectName "my_project"
 #>
 param(
+    [switch]$ValidateOnly,
     [Parameter(Mandatory=$true)][string]$ProjectDir,
     [string]$ProjectName = "",
     [string]$BuildDir    = "build/Debug",
@@ -38,17 +39,35 @@ function ConvertTo-HashtableCompat($InputObject) {
         foreach ($key in $InputObject.Keys) { $result[$key] = ConvertTo-HashtableCompat $InputObject[$key] }
         return $result
     }
-    if ($InputObject -is [pscustomobject]) {
+    # PowerShell exposes adapted properties (including Length) on arrays, so
+    # arrays must be handled before PSCustomObject or they become {Length:N}.
+    if (($InputObject -is [System.Collections.IEnumerable]) -and -not ($InputObject -is [string])) {
+        $result = @()
+        foreach ($item in $InputObject) { $result += ,(ConvertTo-HashtableCompat $item) }
+        return ,$result
+    }
+    if ($InputObject.GetType().FullName -eq 'System.Management.Automation.PSCustomObject') {
         $result = @{}
         foreach ($property in $InputObject.PSObject.Properties) {
             $result[$property.Name] = ConvertTo-HashtableCompat $property.Value
         }
         return $result
     }
-    if (($InputObject -is [System.Collections.IEnumerable]) -and -not ($InputObject -is [string])) {
-        return @($InputObject | ForEach-Object { ConvertTo-HashtableCompat $_ })
-    }
     return $InputObject
+}
+
+function Test-StringArray($Value) {
+    if ($Value -isnot [array]) { return $false }
+    foreach ($item in $Value) {
+        if ($item -isnot [string]) { return $false }
+    }
+    return $true
+}
+
+function Test-LegacyLengthObject($Value) {
+    if ($null -eq $Value -or $Value.GetType().FullName -ne 'System.Management.Automation.PSCustomObject') { return $false }
+    $properties = @($Value.PSObject.Properties)
+    return ($properties.Count -eq 1 -and $properties[0].Name -eq 'Length' -and $properties[0].Value -is [int])
 }
 
 function Test-AmphiLinkConfiguration($Configuration) {
@@ -70,7 +89,7 @@ function Set-ConfigurationProperty($Configuration, [string]$Name, $Value) {
     }
 }
 
-function Ensure-AmphiLinkDefaults($Configuration) {
+function Ensure-AmphiLinkDefaults($Configuration, [string]$ExecutablePath) {
     if (-not (Test-AmphiLinkConfiguration $Configuration)) { return $Configuration }
 
     # The AmphiLink extension owns this entry and may recreate it after a save.
@@ -79,8 +98,9 @@ function Ensure-AmphiLinkDefaults($Configuration) {
     if (-not $Configuration.preLaunchTask) {
         Set-ConfigurationProperty $Configuration 'preLaunchTask' 'CMake Build'
     }
+    Set-ConfigurationProperty $Configuration 'executable' $ExecutablePath
     $commands = @($Configuration.preLaunchCommands | Where-Object { $_ })
-    if ($commands -notcontains 'set remotetimeout 10') {
+    if (-not ($commands -match '^\s*set\s+remotetimeout\s+')) {
         $commands += 'set remotetimeout 10'
         Set-ConfigurationProperty $Configuration 'preLaunchCommands' $commands
     }
@@ -109,16 +129,50 @@ if ([System.IO.Path]::IsPathRooted($BuildDir)) {
 $ProjectDir = [System.IO.Path]::GetFullPath($ProjectDir)
 if (-not (Test-Path $ProjectDir)) { Write-Host "[错误] 目录不存在: $ProjectDir" -ForegroundColor Red; exit 1 }
 
+$iocFiles = @(Get-ChildItem -Path $ProjectDir -Filter "*.ioc" -File)
+if ($iocFiles.Count -ne 1) {
+    throw "Expected exactly one root-level .ioc file in $ProjectDir, found $($iocFiles.Count)."
+}
+$iocFile = $iocFiles[0]
+
 $toolsManifest = Join-Path $ProjectDir "cmake\stm32-cmake-vscode-tools.json"
+$jsonInputs = @(
+    @{ Relative = '.vscode/launch.json'; ArrayField = 'configurations' },
+    @{ Relative = '.vscode/tasks.json'; ArrayField = 'tasks' },
+    @{ Relative = '.vscode/settings.json'; ArrayField = $null },
+    @{ Relative = 'cmake/stm32-cmake-vscode-tools.json'; ArrayField = $null }
+)
+foreach ($input in $jsonInputs) {
+    $relative = $input.Relative
+    $inputPath = Join-Path $ProjectDir $relative
+    if (Test-Path -LiteralPath $inputPath) {
+        try {
+            $parsed = Get-Content -LiteralPath $inputPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($parsed.GetType().FullName -ne 'System.Management.Automation.PSCustomObject') { throw 'Expected a JSON object' }
+            if ($input.ArrayField) {
+                $field = $input.ArrayField
+                if (-not $parsed.PSObject.Properties[$field] -or $parsed.$field -isnot [array]) {
+                    throw "Expected array property: $field"
+                }
+            }
+            if ($relative -eq '.vscode/settings.json') {
+                foreach ($field in @('cmake.preferredGenerators', 'cmake.configureArgs', 'stm32cube-ide-clangd.arguments')) {
+                    $property = $parsed.PSObject.Properties[$field]
+                    if ($property -and -not (Test-StringArray $property.Value) -and -not (Test-LegacyLengthObject $property.Value)) {
+                        throw "Expected string array property: $field"
+                    }
+                }
+            }
+        } catch { throw "Invalid configuration $inputPath : $($_.Exception.Message)" }
+    }
+}
+if ($ValidateOnly) { exit 0 }
 $manifest = $null
 if (Test-Path $toolsManifest) {
     try { $manifest = Get-Content $toolsManifest -Raw | ConvertFrom-Json } catch {
         Write-Host "  [警告] 工具路径清单无法解析，忽略项目清单并继续探测" -ForegroundColor Yellow
     }
 }
-
-$iocFile = Get-ChildItem -Path $ProjectDir -Filter "*.ioc" -File | Select-Object -First 1
-if (-not $iocFile) { Write-Host "[错误] 目录里没有 .ioc（不是 STM32 工程根）" -ForegroundColor Red; exit 1 }
 
 # ============ 解析芯片型号（.ioc） ============
 $iocText = Get-Content $iocFile.FullName -Raw
@@ -307,7 +361,7 @@ $dap = [ordered]@{
     request     = 'launch'
     servertype  = 'openocd'
     cwd         = '${workspaceFolder}'
-    executable  = $buildPath + '/' + $ProjectName + '.elf'
+    executable  = '${command:cmake.launchTargetPath}'
     runToEntryPoint = 'main'
     preLaunchTask   = 'CMake Build'
     preLaunchCommands = @('set remotetimeout 10')
@@ -316,7 +370,10 @@ $dap = [ordered]@{
 if ($device)           { $dap['device'] = $device }
 if ($svdFile)          { $dap['svdFile'] = $svdFile }
 if ($armToolchainPath) { $dap['armToolchainPath'] = $armToolchainPath }
-if ($openocdPath)      { $dap['serverpath'] = $openocdPath }
+if ($openocdPath) {
+    $dap['serverpath'] = $openocdPath
+    if ($openocdScripts) { $dap['searchDir'] = @(($openocdScripts -replace "\\", "/")) }
+}
 $configs += $dap
 $dapIncomplete = (-not $openocdPath) -or (-not $svdFile) -or (-not $device)
 
@@ -337,13 +394,13 @@ if ($launchCanWrite) {
     $managedNames = @('STM32Cube: Launch ST-Link GDB Server', 'STM32 Debug (DAPLink)')
     $keptConfigs = @($existingConfigs |
         Where-Object { $_.name -notin $managedNames } |
-        ForEach-Object { Ensure-AmphiLinkDefaults $_ })
+        ForEach-Object { Ensure-AmphiLinkDefaults $_ '${command:cmake.launchTargetPath}' })
     if ($dapIncomplete) {
         $oldDap = $existingConfigs | Where-Object { $_.name -eq 'STM32 Debug (DAPLink)' } | Select-Object -First 1
         if ($oldDap -and ($oldDap.serverpath -or $oldDap.openocdPath) -and $oldDap.executable) { $configs = @($official, $oldDap) }
     }
-    $launchObj.version = '0.2.0'
-    $launchObj.configurations = @($configs) + $keptConfigs
+    Set-ConfigurationProperty $launchObj 'version' '0.2.0'
+    Set-ConfigurationProperty $launchObj 'configurations' (@($configs) + $keptConfigs)
     $launchJson = $launchObj | ConvertTo-Json -Depth 20
 } else { $launchJson = $null }
 
@@ -353,12 +410,11 @@ $tasksObj = [ordered]@{
     tasks = @(
         [ordered]@{
             label   = 'CMake Build'
-            # Process tasks pass the executable and arguments separately, so
-            # CubeCLT installs under paths such as "C:\Program Files\..."
-            # remain valid without shell quoting rules.
-            type    = 'process'
-            command = $cmakeExe
-            args    = @('--build', $buildPath)
+            # CMake Tools resolves the active build preset. This keeps F5
+            # aligned when the user switches between Debug and Release.
+            type    = 'cmake'
+            command = 'build'
+            targets = @('all')
             group   = [ordered]@{ kind = 'build'; isDefault = $true }
             problemMatcher = '$gcc'
         }
@@ -370,8 +426,8 @@ if (Test-Path $tasksPath) {
     try {
         $oldTasksObj = Get-Content $tasksPath -Raw | ConvertFrom-Json
         $oldTaskList = @($oldTasksObj.tasks | Where-Object { $_.label -ne 'CMake Build' })
-        $oldTasksObj.version = '2.0.0'
-        $oldTasksObj.tasks = @($tasksObj.tasks) + $oldTaskList
+        Set-ConfigurationProperty $oldTasksObj 'version' '2.0.0'
+        Set-ConfigurationProperty $oldTasksObj 'tasks' (@($tasksObj.tasks) + $oldTaskList)
         $tasksJson = $oldTasksObj | ConvertTo-Json -Depth 20
     } catch {
         Write-Host "  [警告] tasks.json 不是可解析的纯 JSON，保留原文件，不覆盖用户任务" -ForegroundColor Yellow
@@ -393,12 +449,20 @@ if (Test-Path $settingsPath) {
 if (-not $settingsObj.ContainsKey("cmake.cmakePath") -or (($settingsObj["cmake.cmakePath"] -eq "cube-cmake") -and -not $hasCubeCmake)) {
     $settingsObj["cmake.cmakePath"] = $cmakeSetting
 }
-if (-not $settingsObj.ContainsKey("cmake.configureArgs")) {
-    $settingsObj["cmake.configureArgs"] = if ($hasCubeCmake) { @("-DCMAKE_COMMAND=cube-cmake") } else { @() }
+if ($settingsObj.ContainsKey("cmake.configureArgs") -and ($settingsObj["cmake.configureArgs"] -is [string])) {
+    $settingsObj["cmake.configureArgs"] = @([string]$settingsObj["cmake.configureArgs"])
+} elseif (-not $settingsObj.ContainsKey("cmake.configureArgs") -or -not (Test-StringArray $settingsObj["cmake.configureArgs"])) {
+    $configureArgs = @()
+    if ($hasCubeCmake) { $configureArgs += "-DCMAKE_COMMAND=cube-cmake" }
+    $settingsObj["cmake.configureArgs"] = $configureArgs
 } elseif (-not $hasCubeCmake) {
     $settingsObj["cmake.configureArgs"] = @($settingsObj["cmake.configureArgs"] | Where-Object { $_ -ne "-DCMAKE_COMMAND=cube-cmake" })
 }
-if (-not $settingsObj.ContainsKey("cmake.preferredGenerators")) { $settingsObj["cmake.preferredGenerators"] = @("Ninja") }
+if ($settingsObj.ContainsKey("cmake.preferredGenerators") -and ($settingsObj["cmake.preferredGenerators"] -is [string])) {
+    $settingsObj["cmake.preferredGenerators"] = @([string]$settingsObj["cmake.preferredGenerators"])
+} elseif (-not $settingsObj.ContainsKey("cmake.preferredGenerators") -or -not (Test-StringArray $settingsObj["cmake.preferredGenerators"])) {
+    $settingsObj["cmake.preferredGenerators"] = @("Ninja")
+}
 $settingsObj["cmake.configureOnOpen"] = $true
 $settingsObj["cmake.configureOnEdit"] = $true
 $settingsObj["cmake.modifyLists.addNewSourceFiles"] = "no"
@@ -432,21 +496,34 @@ function Write-IfChanged([string]$path, [string]$content) {
     Write-Host "  [OK] $(Split-Path $path -Leaf)" -ForegroundColor Green
 }
 
-if ($launchJson) { Write-IfChanged $launchPath $launchJson }
-
-# --- tasks.json 同样防退化：CubeCLT 缺失时 cmake 回退为 PATH 查找，保留已有绝对路径 ---
-$tasksPath = Join-Path $vsDir "tasks.json"
-if (($cmakeExe -eq "cmake") -and (Test-Path $tasksPath)) {
-    $oldTasks = Get-Content $tasksPath -Raw
-    $oldTask = $null
-    try { $oldTask = ($oldTasks | ConvertFrom-Json).tasks | Where-Object { $_.label -eq 'CMake Build' } } catch { $oldTask = $null }
-    if ($oldTask -and $oldTask.command -and ($oldTask.command -ne "cmake")) {
-        Write-Host "  [SKIP] tasks.json（本次缺 CubeCLT 探测，保留已有绝对路径 cmake）" -ForegroundColor DarkYellow
-        $tasksJson = $null
+$outputSnapshots = @{}
+foreach ($outputPath in @($launchPath, $tasksPath, $settingsPath)) {
+    $outputSnapshots[$outputPath] = $null
+    if (Test-Path -LiteralPath $outputPath -PathType Leaf) {
+        $outputSnapshots[$outputPath] = [IO.File]::ReadAllBytes($outputPath)
     }
 }
+
+try {
+if ($launchJson) { Write-IfChanged $launchPath $launchJson }
+
 if ($tasksJson) { Write-IfChanged $tasksPath $tasksJson }
 
 if ($settingsJson) { Write-IfChanged (Join-Path $vsDir "settings.json") $settingsJson }
+} catch {
+    $writeError = $_
+    foreach ($outputPath in $outputSnapshots.Keys) {
+        try {
+            if ($null -ne $outputSnapshots[$outputPath]) {
+                [IO.File]::WriteAllBytes($outputPath, $outputSnapshots[$outputPath])
+            } elseif (Test-Path -LiteralPath $outputPath -PathType Leaf) {
+                Remove-Item -LiteralPath $outputPath -Force
+            }
+        } catch {
+            Write-Warning "Failed to restore $outputPath after generation error: $($_.Exception.Message)"
+        }
+    }
+    throw $writeError
+}
 
 Write-Host "== 完成：launch.json(官方ST-Link + DAPLink) / tasks.json / settings.json(clangd)"

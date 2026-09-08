@@ -1,5 +1,15 @@
 # Troubleshooting
 
+## Initialization failure safety
+
+The initializer validates existing JSON objects, template files and the CMake automation marker before writing. Invalid JSON (including unsupported JSONC comments) now returns a failure instead of silently skipping an update. Repair the named file and rerun initialization. On a caught failure after writing starts, the initializer restores the previous bytes of its seven managed files and removes newly created managed files. Empty directories may remain. This is not a power-loss-safe transaction: do not edit these files concurrently, and retain version control/backups.
+
+AmphiLink entries preserve an existing explicit GDB remote timeout. The default of 10 seconds is added only when no such command exists. Extension Save may still replace its entry; run Configure afterward before F5. This skill does not intercept extension saves or repair device-side TCP disconnects.
+
+AmphiLink CFG Tool 1.1.0 owns its `AmphiLink CFG: ...` entry and replaces that complete object when Save is clicked. Its generated object does not include this Skill's pre-launch build or GDB timeout fields and records the ELF path detected at save time. The Skill deliberately does not add a competing file watcher or duplicate debug entry: either would create two configuration owners and a write race. Until the extension preserves those fields itself, use this deterministic order after changing the AmphiLink device/configuration: Save in AmphiLink, run CMake Configure once, then use F5. Ordinary source and IOC changes do not require this extra manual Configure; Build handles those automatically.
+
+The Windows fixture now checks malformed-JSON preflight, multiple root-level IOC rejection, rollback on injected initializer/generator failures, preservation of a custom GDB timeout, adding a source and a header directory after the first build, an in-project custom build directory, and an IOC edit followed by Build only. These host-compiler tests do not replace ARM firmware or physical debugger tests.
+
 ## Always operate on the project root
 
 Run the initializer and open the folder that directly contains the project's `.ioc` and top-level `CMakeLists.txt`. Do not run it from `cmake/`, `cmake/stm32cubemx/`, `build/`, or a VS Code workspace that contains several projects. If the script reports that `.ioc` or `CMakeLists.txt` is missing, correct `-ProjectDir` first; do not create placeholder files.
@@ -14,7 +24,7 @@ Moving the Skill repository itself does not break an already initialized project
 
 ## The wrong `.ioc` file is used
 
-Keep exactly one main `.ioc` file in the project root. The scripts select the first root-level `.ioc` returned by the filesystem. If a project has several configurations, put secondary `.ioc` files in another directory or initialize each project separately; do not rely on selection order.
+Keep exactly one main `.ioc` file in the project root. Initialization stops before changing files when zero or multiple root-level `.ioc` files are present. If a project has several configurations, put secondary `.ioc` files in another directory or initialize each project separately.
 
 ## VS Code configuration is not regenerated
 

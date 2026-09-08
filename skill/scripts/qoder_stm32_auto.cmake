@@ -15,7 +15,7 @@
 execute_process(
     # Use CMake's actual binary directory so custom presets and multi-config
     # layouts do not force the generated debug entry into build/Debug.
-    COMMAND "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File
+    COMMAND "$ENV{SystemRoot}/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File
         "${CMAKE_CURRENT_LIST_DIR}/generate_vscode.ps1"
         -ProjectDir "${CMAKE_SOURCE_DIR}"
         -ProjectName "${CMAKE_PROJECT_NAME}"

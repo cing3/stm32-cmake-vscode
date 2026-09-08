@@ -55,6 +55,19 @@ if ($Register -or $Unregister) {
     }
     $scriptPath = $MyInvocation.MyCommand.Path
     $cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -ProjectDir `"%V`""
+    foreach ($toolArgument in @(
+        @{ Name = 'BundleDir'; Value = $BundleDir },
+        @{ Name = 'CubeCLTDir'; Value = $CubeCLTDir },
+        @{ Name = 'OpenOCDDir'; Value = $OpenOCDDir }
+    )) {
+        if ($toolArgument.Value) {
+            $resolvedToolPath = [IO.Path]::GetFullPath($toolArgument.Value)
+            if (-not (Test-Path -LiteralPath $resolvedToolPath -PathType Container)) {
+                throw "Cannot register missing $($toolArgument.Name): $resolvedToolPath"
+            }
+            $cmd += " -$($toolArgument.Name) `"$resolvedToolPath`""
+        }
+    }
     New-Item -Path $key -Force | Out-Null
     Set-Item -Path $key -Value "初始化 STM32 VSCode 工程"
     New-Item -Path "$key\command" -Force | Out-Null
@@ -68,13 +81,32 @@ if (-not $ProjectDir) { $ProjectDir = (Get-Location).Path }
 $ProjectDir = [System.IO.Path]::GetFullPath($ProjectDir)
 if (-not (Test-Path $ProjectDir)) { Write-Host "错误：目录不存在 $ProjectDir" -ForegroundColor Red; exit 1 }
 
-$iocFile = Get-ChildItem -Path $ProjectDir -Filter "*.ioc" -File | Select-Object -First 1
-if (-not $iocFile) { Write-Host "错误：目录里没有 .ioc 文件（不是 STM32 工程根）" -ForegroundColor Red; exit 1 }
+$iocFiles = @(Get-ChildItem -Path $ProjectDir -Filter "*.ioc" -File)
+if ($iocFiles.Count -ne 1) {
+    throw "工程根目录必须恰好包含一个 .ioc 文件；当前找到 $($iocFiles.Count) 个。"
+}
+$iocFile = $iocFiles[0]
 $cmakeFile = Join-Path $ProjectDir "CMakeLists.txt"
 if (-not (Test-Path $cmakeFile)) { Write-Host "错误：目录里没有 CMakeLists.txt" -ForegroundColor Red; exit 1 }
 $projectAutoCmake = Join-Path $ProjectDir "cmake\qoder_stm32_auto.cmake"
 $projectGenerator = Join-Path $ProjectDir "cmake\generate_vscode.ps1"
 $toolsManifest = Join-Path $ProjectDir "cmake\stm32-cmake-vscode-tools.json"
+foreach ($required in @($GENERATOR, $AUTO_CMAKE)) {
+    if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Missing template: $required" }
+}
+$preflightText = Get-Content -LiteralPath $cmakeFile -Raw -Encoding UTF8
+if ($preflightText -match 'QODER_AUTO_CONFIG' -and $preflightText -notmatch '(?s)# ==================== QODER_AUTO_CONFIG ====================.*?# ==================== QODER_AUTO_CONFIG END ====================') {
+    throw 'Incomplete QODER_AUTO_CONFIG block; no files were changed.'
+}
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $GENERATOR -ProjectDir $ProjectDir -ValidateOnly
+if ($LASTEXITCODE -ne 0) { throw 'Configuration preflight failed; no files were changed.' }
+$originalFiles = @{}
+foreach ($relative in @('CMakeLists.txt', 'cmake/qoder_stm32_auto.cmake', 'cmake/generate_vscode.ps1', 'cmake/stm32-cmake-vscode-tools.json', '.vscode/launch.json', '.vscode/tasks.json', '.vscode/settings.json')) {
+    $filePath = Join-Path $ProjectDir $relative
+    $originalFiles[$filePath] = $null
+    if (Test-Path -LiteralPath $filePath -PathType Leaf) { $originalFiles[$filePath] = [IO.File]::ReadAllBytes($filePath) }
+}
+try {
 New-Item -ItemType Directory -Path (Split-Path $projectAutoCmake -Parent) -Force | Out-Null
 Copy-Item -LiteralPath $AUTO_CMAKE -Destination $projectAutoCmake -Force
 Copy-Item -LiteralPath $GENERATOR -Destination $projectGenerator -Force
@@ -114,41 +146,39 @@ foreach(_exclude_dir IN LISTS QODER_SOURCE_EXCLUDE_DIRS)
     string(TOLOWER "${_exclude_dir}" _exclude_dir_lower)
     list(APPEND QODER_SOURCE_EXCLUDE_DIRS_LOWER "${_exclude_dir_lower}")
 endforeach()
-# Compare path components relative to the project root. This avoids both
-# regex metacharacter surprises and false exclusions caused by a parent folder
-# named "tests" or "tools" outside the project itself.
-function(qoder_filter_excluded_paths _out_var)
-    set(_filtered "")
-    foreach(_path IN LISTS ARGN)
-        file(RELATIVE_PATH _relative_path "${CMAKE_SOURCE_DIR}" "${_path}")
-        get_filename_component(_relative_dir "${_relative_path}" DIRECTORY)
-        string(REPLACE "\\" "/" _relative_dir "${_relative_dir}")
-        string(REPLACE "/" ";" _relative_parts "${_relative_dir}")
-        set(_excluded FALSE)
-        foreach(_part IN LISTS _relative_parts)
-            string(TOLOWER "${_part}" _part_lower)
-            if(_part_lower IN_LIST QODER_SOURCE_EXCLUDE_DIRS_LOWER)
-                set(_excluded TRUE)
-                break()
+file(REAL_PATH "${CMAKE_BINARY_DIR}" QODER_BINARY_DIR_REAL)
+# Walk one directory at a time and never enter excluded trees. Each visited
+# directory is still watched with CONFIGURE_DEPENDS, so new nested directories
+# and files trigger Configure without build outputs causing false mismatches.
+function(qoder_collect_directory _directory _out_sources _out_headers)
+    set(_sources "")
+    set(_headers "")
+    file(GLOB _entries CONFIGURE_DEPENDS LIST_DIRECTORIES true "${_directory}/*")
+    foreach(_entry IN LISTS _entries)
+        if(IS_DIRECTORY "${_entry}")
+            get_filename_component(_directory_name "${_entry}" NAME)
+            string(TOLOWER "${_directory_name}" _directory_name_lower)
+            file(REAL_PATH "${_entry}" _entry_real)
+            if(NOT _entry_real STREQUAL QODER_BINARY_DIR_REAL AND NOT _directory_name_lower IN_LIST QODER_SOURCE_EXCLUDE_DIRS_LOWER)
+                qoder_collect_directory("${_entry}" _child_sources _child_headers)
+                list(APPEND _sources ${_child_sources})
+                list(APPEND _headers ${_child_headers})
             endif()
-        endforeach()
-        if(NOT _excluded)
-            list(APPEND _filtered "${_path}")
+        else()
+            get_filename_component(_extension "${_entry}" EXT)
+            string(TOLOWER "${_extension}" _extension_lower)
+            get_filename_component(_file_name "${_entry}" NAME)
+            if(_extension_lower MATCHES "^\\.(c|cc|cpp|cxx|s|asm)$" AND NOT _file_name MATCHES "^system_stm32.*\\.c$")
+                list(APPEND _sources "${_entry}")
+            elseif(_extension_lower MATCHES "^\\.(h|hh|hpp|hxx)$")
+                list(APPEND _headers "${_entry}")
+            endif()
         endif()
     endforeach()
-    set(${_out_var} "${_filtered}" PARENT_SCOPE)
+    set(${_out_sources} "${_sources}" PARENT_SCOPE)
+    set(${_out_headers} "${_headers}" PARENT_SCOPE)
 endfunction()
-file(GLOB_RECURSE QODER_USER_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_SOURCE_DIR}/*.c"
-    "${CMAKE_SOURCE_DIR}/*.cc"
-    "${CMAKE_SOURCE_DIR}/*.cpp"
-    "${CMAKE_SOURCE_DIR}/*.cxx"
-    "${CMAKE_SOURCE_DIR}/*.s"
-    "${CMAKE_SOURCE_DIR}/*.S"
-    "${CMAKE_SOURCE_DIR}/*.asm"
-)
-qoder_filter_excluded_paths(QODER_USER_SOURCES ${QODER_USER_SOURCES})
-list(FILTER QODER_USER_SOURCES EXCLUDE REGEX "system_stm32.*\.c$")
+qoder_collect_directory("${CMAKE_SOURCE_DIR}" QODER_USER_SOURCES QODER_USER_HEADERS)
 set(QODER_USER_CXX_SOURCES "")
 foreach(_src IN LISTS QODER_USER_SOURCES)
     get_filename_component(_ext "${_src}" EXT)
@@ -161,13 +191,6 @@ if(QODER_USER_CXX_SOURCES)
 endif()
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${QODER_USER_SOURCES})
 
-file(GLOB_RECURSE QODER_USER_HEADERS CONFIGURE_DEPENDS
-    "${CMAKE_SOURCE_DIR}/*.h"
-    "${CMAKE_SOURCE_DIR}/*.hh"
-    "${CMAKE_SOURCE_DIR}/*.hpp"
-    "${CMAKE_SOURCE_DIR}/*.hxx"
-)
-qoder_filter_excluded_paths(QODER_USER_HEADERS ${QODER_USER_HEADERS})
 set(QODER_USER_INCLUDE_DIRS "")
 foreach(_hdr IN LISTS QODER_USER_HEADERS)
     get_filename_component(_dir "${_hdr}" DIRECTORY)
@@ -196,8 +219,7 @@ if ($cmakeText -match $blockPattern) {
     [System.IO.File]::WriteAllText($cmakeFile, $cmakeText, (New-Object System.Text.UTF8Encoding($false)))
     Write-Host "  [OK] CMakeLists.txt 已升级自动配置块" -ForegroundColor Green
 } elseif ($cmakeText -match "QODER_AUTO_CONFIG") {
-    Write-Host "  [错误] CMakeLists.txt 含有不完整的 QODER_AUTO_CONFIG 标记，未追加新配置；请先人工检查该文件" -ForegroundColor Red
-    exit 1
+    throw "CMakeLists.txt 含有不完整的 QODER_AUTO_CONFIG 标记，初始化已回滚。"
 } else {
     [System.IO.File]::AppendAllText($cmakeFile, "`r`n$injectBlock`r`n", (New-Object System.Text.UTF8Encoding($false)))
     Write-Host "  [OK] CMakeLists.txt 已注入：内联全层收集 + .vscode 自动生成钩子" -ForegroundColor Green
@@ -213,12 +235,32 @@ if ($OpenOCDDir) { $generatorArgs += @('-OpenOCDDir', $OpenOCDDir) }
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  [错误] .vscode 生成失败（退出码 $LASTEXITCODE）" -ForegroundColor Red
     Write-Host "  初始化已中止：请修复工具路径或 JSON 配置后重新运行，不要在不完整配置上继续 Configure/Debug。" -ForegroundColor Red
-    exit $LASTEXITCODE
+    throw "Generator failed with exit code $LASTEXITCODE"
 } else {
     Write-Host "  [OK] .vscode 已就位" -ForegroundColor Green
 }
 
 # ============ 摘要 ============
+} catch {
+    $initializationError = $_
+    $rollbackErrors = @()
+    foreach ($filePath in $originalFiles.Keys) {
+        try {
+            if ($null -ne $originalFiles[$filePath]) {
+                [IO.File]::WriteAllBytes($filePath, $originalFiles[$filePath])
+            } elseif (Test-Path -LiteralPath $filePath -PathType Leaf) {
+                Remove-Item -LiteralPath $filePath -Force
+            }
+        } catch {
+            $rollbackErrors += "$filePath : $($_.Exception.Message)"
+            Write-Warning "初始化失败后无法恢复 $filePath : $($_.Exception.Message)"
+        }
+    }
+    if ($rollbackErrors.Count -gt 0) {
+        throw "$($initializationError.Exception.Message) Rollback incomplete: $($rollbackErrors -join ' | ')"
+    }
+    throw $initializationError
+}
 Write-Host ""
 Write-Host "================ 初始化完成 ================" -ForegroundColor Cyan
 Write-Host "1. 用 VSCode 打开: $ProjectDir"

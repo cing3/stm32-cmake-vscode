@@ -10,6 +10,17 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Initialization now rejects zero or multiple root-level `.ioc` files instead of selecting an arbitrary file.
+- Existing VS Code JSON files now receive file-specific shape validation before any project files are changed.
+- Repeated Configure runs no longer turn scalar settings into `{ "Length": ... }` objects or collapse one-element JSON arrays.
+- The VS Code generator restores its managed JSON files if a caught write failure occurs partway through generation.
+- Existing user-defined `set remotetimeout` commands are preserved.
+- Explorer registration now preserves explicitly supplied tool-directory overrides and rejects missing directories.
+- Repeated generation now preserves JSON arrays in `settings.json` and repairs array fields corrupted by older generator output.
+- Debug tasks and Cortex-Debug ELF selection now follow the active CMake preset instead of the most recently configured directory.
+- Initialization rollback now reports any managed files that could not be restored.
+- Source discovery now skips excluded directory trees during traversal, preventing build outputs from causing false `GLOB mismatch` reconfiguration.
+- Generic DAPLink configurations now include the discovered OpenOCD script search directory.
 - AmphiLink Cortex-Debug entries now receive an automatic `CMake Build` pre-launch task and a 10-second wireless GDB timeout during Configure.
 - Source exclusions now compare exact relative directory components instead of an absolute-path regular expression.
 - Initialization and Configure now stop visibly when `.vscode` generation fails, preventing stale debug configurations from being used.
