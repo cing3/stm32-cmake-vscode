@@ -160,7 +160,8 @@ try {
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
     $vsInstance = ''
     if (Test-Path -LiteralPath $vswhere) {
-        $vsInstance = ([string](& $vswhere -latest -products '*' -version '[17.0,18.0)' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null | Select-Object -First 1)).Trim()
+        $vsInstanceCandidate = & $vswhere -latest -products '*' -version '[17.0,18.0)' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null | Select-Object -First 1
+        if ($null -ne $vsInstanceCandidate) { $vsInstance = ([string]$vsInstanceCandidate).Trim() }
     }
     $compiler = @(
         (Get-Command gcc.exe -ErrorAction SilentlyContinue),
