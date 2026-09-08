@@ -158,7 +158,7 @@ foreach ($input in $jsonInputs) {
     if (Test-Path -LiteralPath $inputPath) {
         try {
             $parsed = Get-Content -LiteralPath $inputPath -Raw -Encoding UTF8 | ConvertFrom-Json
-            if ($parsed.GetType().FullName -ne 'System.Management.Automation.PSCustomObject') { throw 'Expected a JSON object' }
+            if ($null -eq $parsed -or $parsed.GetType().FullName -ne 'System.Management.Automation.PSCustomObject') { throw 'Expected a non-empty JSON object' }
             if ($input.ArrayField) {
                 $field = $input.ArrayField
                 if (-not $parsed.PSObject.Properties[$field] -or $parsed.$field -isnot [array]) {

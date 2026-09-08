@@ -22,6 +22,7 @@ All notable changes to this project are documented here.
 - Source discovery now skips excluded directory trees during traversal, preventing build outputs from causing false `GLOB mismatch` reconfiguration.
 - Generic DAPLink configurations now include the discovered OpenOCD script search directory.
 - Invalid project paths, explicit tool directories, manifest field types, and non-object task/debug entries now fail before generation.
+- Empty VS Code JSON files now fail with a diagnostic instead of raising a null-reference error.
 - AmphiLink Cortex-Debug entries now receive an automatic `CMake Build` pre-launch task and a 10-second wireless GDB timeout during Configure.
 - Source exclusions now compare exact relative directory components instead of an absolute-path regular expression.
 - Initialization and Configure now stop visibly when `.vscode` generation fails, preventing stale debug configurations from being used.

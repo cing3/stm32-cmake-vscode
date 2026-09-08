@@ -61,6 +61,13 @@ try {
     Assert-True ($LASTEXITCODE -ne 0) 'Invalid settings field shape must fail initialization.'
     Assert-True ([IO.File]::ReadAllText((Join-Path $projectDir 'CMakeLists.txt')) -eq $originalCmake) 'Invalid settings shape changed CMakeLists.'
     Assert-True (-not (Test-Path $generator)) 'Invalid settings shape copied generator.'
+    [IO.File]::WriteAllText($badSettings, '')
+    $ErrorActionPreference = 'Continue'
+    $emptyOutput = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $initializer -ProjectDir $projectDir 2>&1 | Out-String
+    $ErrorActionPreference = 'Stop'
+    Assert-True ($LASTEXITCODE -ne 0) 'Empty JSON must fail initialization.'
+    Assert-True ([IO.File]::ReadAllText((Join-Path $projectDir 'CMakeLists.txt')) -eq $originalCmake) 'Empty JSON changed CMakeLists.'
+    Assert-True (-not (Test-Path $generator)) 'Empty JSON copied generator.'
     [IO.File]::WriteAllText($badSettings, '{"cmake.preferredGenerators":{"Length":5},"cmake.configureArgs":{"Length":26}}')
     $rollbackTemplates = Join-Path $testRoot 'rollback-templates'
     New-Item -ItemType Directory $rollbackTemplates -Force | Out-Null
