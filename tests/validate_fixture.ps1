@@ -205,7 +205,9 @@ try {
     Assert-True ($brokenCode -ne 0) 'CMake Configure unexpectedly succeeded after the .vscode generator failed.'
     Assert-True ($brokenOutput -match 'qoder \.vscode auto-generate failed') 'CMake output did not expose the qoder generator failure.'
 } catch {
-    $message = ($_.Exception.Message -replace '[\r\n]+', ' ')
+    $position = $_.InvocationInfo.PositionMessage -replace '[\r\n]+', ' '
+    $stack = $_.ScriptStackTrace -replace '[\r\n]+', ' '
+    $message = ("$($_.Exception.Message) position=$position stack=$stack") -replace '[\r\n]+', ' '
     Write-Output "::error file=tests/validate_fixture.ps1,line=1::$message"
     throw
 } finally {
