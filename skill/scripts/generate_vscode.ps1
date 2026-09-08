@@ -127,7 +127,17 @@ if ([System.IO.Path]::IsPathRooted($BuildDir)) {
 
 # ============ 定位工程根 ============
 $ProjectDir = [System.IO.Path]::GetFullPath($ProjectDir)
-if (-not (Test-Path $ProjectDir)) { Write-Host "[错误] 目录不存在: $ProjectDir" -ForegroundColor Red; exit 1 }
+if (-not (Test-Path -LiteralPath $ProjectDir -PathType Container)) { Write-Host "[错误] 工程目录不存在: $ProjectDir" -ForegroundColor Red; exit 1 }
+
+foreach ($toolArgument in @(
+    @{ Name = 'BundleDir'; Value = $BundleDir },
+    @{ Name = 'CubeCLTDir'; Value = $CubeCLTDir },
+    @{ Name = 'OpenOCDDir'; Value = $OpenOCDDir }
+)) {
+    if ($toolArgument.Value -and -not (Test-Path -LiteralPath $toolArgument.Value -PathType Container)) {
+        throw "Explicit $($toolArgument.Name) directory does not exist: $($toolArgument.Value)"
+    }
+}
 
 $iocFiles = @(Get-ChildItem -Path $ProjectDir -Filter "*.ioc" -File)
 if ($iocFiles.Count -ne 1) {
@@ -154,12 +164,24 @@ foreach ($input in $jsonInputs) {
                 if (-not $parsed.PSObject.Properties[$field] -or $parsed.$field -isnot [array]) {
                     throw "Expected array property: $field"
                 }
+                foreach ($item in $parsed.$field) {
+                    if ($null -eq $item -or $item.GetType().FullName -ne 'System.Management.Automation.PSCustomObject') {
+                        throw "Expected every item in array property $field to be a JSON object"
+                    }
+                }
             }
             if ($relative -eq '.vscode/settings.json') {
                 foreach ($field in @('cmake.preferredGenerators', 'cmake.configureArgs', 'stm32cube-ide-clangd.arguments')) {
                     $property = $parsed.PSObject.Properties[$field]
                     if ($property -and -not (Test-StringArray $property.Value) -and -not (Test-LegacyLengthObject $property.Value)) {
                         throw "Expected string array property: $field"
+                    }
+                }
+            } elseif ($relative -eq 'cmake/stm32-cmake-vscode-tools.json') {
+                foreach ($field in @('BundleDir', 'CubeCLTDir', 'OpenOCDDir')) {
+                    $property = $parsed.PSObject.Properties[$field]
+                    if ($property -and $property.Value -isnot [string]) {
+                        throw "Expected string property: $field"
                     }
                 }
             }

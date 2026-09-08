@@ -40,6 +40,11 @@ try {
     $generator = Join-Path $projectDir 'cmake\generate_vscode.ps1'
     $cmake = (Get-Command cmake -ErrorAction Stop).Source
     $badSettings = Join-Path $projectDir '.vscode/settings.json'
+    $ErrorActionPreference = 'Continue'
+    $missingToolOutput = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $initializer -ProjectDir $projectDir -OpenOCDDir (Join-Path $testRoot 'missing-openocd') 2>&1 | Out-String
+    $ErrorActionPreference = 'Stop'
+    Assert-True ($LASTEXITCODE -ne 0) 'A missing explicit tool directory must fail initialization.'
+    Assert-True (-not (Test-Path $generator)) 'Missing explicit tool directory copied generator.'
     New-Item -ItemType Directory (Split-Path $badSettings) -Force | Out-Null
     [IO.File]::WriteAllText($badSettings, '{ broken')
     $originalCmake = [IO.File]::ReadAllText((Join-Path $projectDir 'CMakeLists.txt'))

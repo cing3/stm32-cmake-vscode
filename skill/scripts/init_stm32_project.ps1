@@ -79,7 +79,17 @@ if ($Register -or $Unregister) {
 # ============ 定位工程根 ============
 if (-not $ProjectDir) { $ProjectDir = (Get-Location).Path }
 $ProjectDir = [System.IO.Path]::GetFullPath($ProjectDir)
-if (-not (Test-Path $ProjectDir)) { Write-Host "错误：目录不存在 $ProjectDir" -ForegroundColor Red; exit 1 }
+if (-not (Test-Path -LiteralPath $ProjectDir -PathType Container)) { Write-Host "错误：工程目录不存在 $ProjectDir" -ForegroundColor Red; exit 1 }
+
+foreach ($toolArgument in @(
+    @{ Name = 'BundleDir'; Value = $BundleDir },
+    @{ Name = 'CubeCLTDir'; Value = $CubeCLTDir },
+    @{ Name = 'OpenOCDDir'; Value = $OpenOCDDir }
+)) {
+    if ($toolArgument.Value -and -not (Test-Path -LiteralPath $toolArgument.Value -PathType Container)) {
+        throw "显式指定的 $($toolArgument.Name) 目录不存在：$($toolArgument.Value)"
+    }
+}
 
 $iocFiles = @(Get-ChildItem -Path $ProjectDir -Filter "*.ioc" -File)
 if ($iocFiles.Count -ne 1) {
